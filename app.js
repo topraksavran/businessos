@@ -74,16 +74,20 @@ async function exportBusinessReportWithPosDetails(){
   const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=[{wch:16},{wch:16},{wch:34},{wch:24},{wch:16}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Finans Raporu');
   try{
-    if(typeof client==='undefined'||!state.tenantId)throw new Error('Bulut çalışma alanı bulunamadı');
-    const {data:sales,error:salesError}=await client.from('sales').select('id,created_at,payment_method,total_minor,status').eq('workspace_id',state.tenantId).order('created_at',{ascending:true});
+    const db=window.businessosSupabase;
+    if(!db||!state.tenantId)throw new Error('Bulut çalışma alanı bulunamadı');
+    const {data:sales,error:salesError}=await db.from('sales').select('id,created_at,payment_method,total_minor,status').eq('workspace_id',state.tenantId).order('created_at',{ascending:true});
     if(salesError)throw salesError;
     const selected=(sales||[]).filter(s=>s.status!=='cancelled'&&s.status!=='voided').filter(s=>{const d=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Istanbul'}).format(new Date(s.created_at));return(!start||d>=start)&&(!end||d<=end)});
     const ids=selected.map(s=>s.id);
     let items=[];
-    if(ids.length){const result=await client.from('sale_items').select('sale_id,product_id,quantity,unit_price_minor,vat_rate,products(name,barcode,cost_minor)').in('sale_id',ids);if(result.error)throw result.error;items=result.data||[]}
+    if(ids.length){const result=await db.from('sale_items').select('sale_id,product_id,quantity,unit_price_minor,vat_rate').in('sale_id',ids);if(result.error)throw result.error;items=result.data||[]}
+    const productIds=[...new Set(items.map(item=>item.product_id).filter(Boolean))];
+    const productMap=new Map();
+    if(productIds.length){const result=await db.from('products').select('id,name,barcode,cost_minor').in('id',productIds);if(result.error)throw result.error;(result.data||[]).forEach(product=>productMap.set(product.id,product))}
     const saleMap=new Map(selected.map(s=>[s.id,s]));
     const detailRows=[['POS SATIŞ DETAYI'],[],['Tarih','Fiş No','Ürün','Barkod','Adet','Birim Satış (TL)','Toplam Satış (TL)','Birim Maliyet (TL)','Toplam Maliyet (TL)','KDV %','Ödeme']];
-    items.forEach(item=>{const sale=saleMap.get(item.sale_id),product=item.products||{},qty=Number(item.quantity||0),unit=Number(item.unit_price_minor||0)/100,cost=Number(product.cost_minor||0)/100;detailRows.push([new Intl.DateTimeFormat('tr-TR',{timeZone:'Europe/Istanbul',dateStyle:'short',timeStyle:'medium'}).format(new Date(sale.created_at)),`POS-${String(sale.id).slice(0,8)}`,product.name||'Ürün',product.barcode||'',qty,unit,unit*qty,cost,cost*qty,Number(item.vat_rate||0),sale.payment_method==='cash'?'Nakit':'Kredi kartı'])});
+    items.forEach(item=>{const sale=saleMap.get(item.sale_id);if(!sale)return;const product=productMap.get(item.product_id)||{},qty=Number(item.quantity||0),unit=Number(item.unit_price_minor||0)/100,cost=Number(product.cost_minor||0)/100;detailRows.push([new Intl.DateTimeFormat('tr-TR',{timeZone:'Europe/Istanbul',dateStyle:'short',timeStyle:'medium'}).format(new Date(sale.created_at)),`POS-${String(sale.id).slice(0,8)}`,product.name||'Ürün',product.barcode||'',qty,unit,unit*qty,cost,cost*qty,Number(item.vat_rate||0),sale.payment_method==='cash'?'Nakit':'Kredi kartı'])});
     const detailSheet=XLSX.utils.aoa_to_sheet(detailRows);detailSheet['!cols']=[{wch:20},{wch:14},{wch:28},{wch:18},{wch:8},{wch:18},{wch:18},{wch:18},{wch:20},{wch:10},{wch:16}];XLSX.utils.book_append_sheet(wb,detailSheet,'POS Satış Detayı');
   }catch(error){console.error(error);toast('POS detayları alınamadı; finans özeti dışa aktarılıyor')}
   XLSX.writeFile(wb,`businessos-finans-raporu-${today}.xlsx`);toast('Excel raporu indirildi');
