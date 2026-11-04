@@ -1,4 +1,5 @@
 const KEY = 'businessos-state-v1';
+const removeCashFlowCard=()=>{document.querySelectorAll('.card').forEach(card=>{const label=card.querySelector('.label')?.textContent||'';if(label.includes('Net nakit akışı'))card.remove();const text=card.textContent||'';if(text.includes('Net nakit akışı yalnızca')){const note=[...card.querySelectorAll('p')].find(p=>p.textContent.includes('Net nakit akışı'));if(note)note.remove()}})};new MutationObserver(removeCashFlowCard).observe(document.body,{childList:true,subtree:true});
 const id = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 const today = new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Istanbul'}).format(new Date());
 const money = (minor) => new Intl.NumberFormat('tr-TR',{style:'currency',currency:state.settings.currency||'TRY'}).format(minor/100);
